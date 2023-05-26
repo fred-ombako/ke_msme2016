@@ -8,11 +8,6 @@ use "G:\My Drive\2. Personal Projects\1. Research Projects\1. Data Resources\msm
 
 // Cleaning and preparing the dataset
 
-* Keeping variables of interest
-
-// keep a_41 county eb14_2 eb16_1 ee01 tot* em01-em15 ej13-ej15 ed01 ed02 eh04_1 eh09 est_wgt 
-
-// Converting string variables to numeric 
 ds, has(type string)
 foreach var of varlist `r(varlist)' {
     encode `var', generate(n_`var')
@@ -182,7 +177,7 @@ drop em08a
 gen credit_denied = . // of the people who applied for credit in the last 12 months
 replace credit_denied = 0 if em08b==0
 replace credit_denied = 1 if em08b==1
-label var credit_denied "Denied credit"
+label var credit_denied "MSME was denied credit"
 label define denied 1"Yes" 0"No"
 label value credit_denied denied
 drop em08b
@@ -251,7 +246,7 @@ label define account 1"Yes" 0"No"
 label value account account
 drop em11
 
-gen account_inst = .
+gen account_inst = . 
 replace account_inst = 1 if em12==1
 replace account_inst = 2 if em12==2
 replace account_inst = 3 if em12==5
@@ -261,6 +256,10 @@ label define em12 1"Commercial banks" 2"Microfinance Institutions" 3"SACCOs" /*
 label var account_inst "Business account's institution"
 label value account_inst em12
 drop em12
+
+gen inst2 = account_inst if account==1
+label var inst2 "Business account's institution"
+label value inst2 em12
 
 gen bus_const1 = .
 replace bus_const1 = 0 if em13==0
@@ -312,15 +311,41 @@ label define educ 0"None or below primary" 1"Primary" 2"Secondary" /*
 label value educ educ
 drop ee01
 
+gen received_yes = 1 if credit_denied == 0
+replace received_yes = 0 if credit_denied==1
+label var received_yes "MSME received credit"
+
+gen applied_no = 1 if credit_applied_3 == 0
+replace applied_no = 0 if credit_applied_3==1
+label var applied_no "Did not apply for credit in the last 3 years"
+
+gen applied_no2 = 1 if credit_applied_1==0
+replace applied_no2 = 0 if credit_applied_1==1
+label var applied_no2 "Did not apply for credit in the last 12 months"
+
+gen adequate_no = 1 if credit_adeq ==0
+replace adequate_no = 0 if credit_adeq==1
+label var adequate_no "Credit not adequate - bank rationing"
+
+gen c_applied = .   // applied for credit, general 
+replace c_applied = 1 if credit_applied_3==1 | credit_applied_1==1
+replace c_applied = 0 if credit_applied_3==0 | credit_applied_1==0
+
+gen credit_access = (credit_denied==0) if credit_applied_3==1 | credit_applied_1==1 // applied for and got credit 
+
+gen is_male = 1 if sex_ownership==1
+gen is_female = 1 if sex_ownership==2
+gen is_mixed = 1 if sex_ownership==3
+
+generate fin_gap = credit_applied_amt - credit_received_amt // financing gap
+label var fin_gap "MSME Financing Gap"
+
 // Data analysis 
 
 * Descriptive and bivariate statistics 
 
 tabulate msme_cat_start sex_ownership, col
 tabulate msme_cat_end sex_ownership, col // change in MSME categories over time
-tab decision_maker sex_ownership, col // main decision maker in the business
-tab own_structure sex_ownership, col // ownership structure 
-tab msme_reg sex_ownership, col // business registration
 
 tab credit_applied_3 sex_ownership, col
 tab credit_applied_1 sex_ownership, col
@@ -334,12 +359,7 @@ tab credit_denied_by sex_ownership, col
 tab reason1 sex_ownership, col
 tab reason2 sex_ownership, col
 tab reason3 sex_ownership, col
-tab account sex_ownership, col
-tab account_inst sex_ownership, col
-tab bus_const1 sex_ownership, col
-tab bus_const2 sex_ownership, col
-tab bus_const3 sex_ownership, col
-tab educ sex_ownership, col
+
 
 bysort sex_ownership: sum monthly_inc if msme_cat_end ==1 // income if micro
 bysort sex_ownership: sum monthly_inc if msme_cat_end ==2
@@ -353,69 +373,229 @@ bysort sex_ownership: sum credit_applied_amt
 bysort sex_ownership: sum credit_received_amt 
 
 * Mean differences 
-
-global msme_folder "G:\My Drive\2. Personal Projects\1. Research Projects\1. Data Resources"
-
-global covariates_all sex_ownership county tot_exp monthly_inc tot_empl_end /*
-*/ own_structure industry educ account account_inst msme_cat_end /*
-*/ decision_maker male_empl_end female_empl_end industry msme_perf msme_reg // all covariates
-
-global covariates_red monthly_inc tot_exp tot_empl_end own_structure /*
-*/ educ account account_inst decision_maker industry msme_perf msme_reg // reduced covariates
-
 global credit_access credit_applied_3 credit_access credit_applied_amt credit_received_amt credit_source credit_purpose /* 
 */ credit_adeq credit_inadeq_reason credit_info_source credit_applied_1 credit_denied credit_denied_by // credit access 
 
-global business_const bus_const1 bus_const2 bus_const3 // business constraints
+* Descriptive analysis for business and owner characteristics
 
-iebaltab $covariates_red $credit_access $business_const if sex_ownership<=2, /*
-*/ grpvar(sex_ownership) vce(cluster county) savexlsx("$msme_folder/full_table1.xlsx") /*
-*/ replace ftest rowvarlabel // mean differences for full model, male v female owned MSMEs
+tab sex_ownership
+tab own_structure sex_ownership, col
+tab educ sex_ownership, col
+tab msme_reg sex_ownership, col
+tab industry sex_ownership, col
+tab msme_cat_end sex_ownership, col
+bysort sex_ownership: sum tot_empl_end male_empl_end female_empl_end
 
-iebaltab $covariates_red $credit_access $business_const, grpvar(sex_ownership) /*
-*/ vce(cluster county) savexlsx("$msme_folder/full_table2.xlsx") /*
-*/ replace ftest rowvarlabel // mean differences for full model, all enterprises
+* Descriptive analysis for business operations and constraints
+
+tab decision_maker sex_ownership, col
+tab account sex_ownership, col
+tab inst2 sex_ownership, col 
+tab bus_const1 sex_ownership, col
+tab bus_const2 sex_ownership, col
+tab bus_const3 sex_ownership, col
+
+* Descriptive analysis for business performance
+
+tab msme_perf sex_ownership, col
+bysort sex_ownership: sum monthly_inc tot_exp 
+sum monthly_inc tot_exp 
+tab msme_cat_start msme_cat_end, row
+bysort sex_ownership: tab msme_cat_start msme_cat_end, row
+bysort sex_own: sum male_empl_start female_empl_start tot_empl_start male_empl_end female_empl_end tot_empl_end
+sum male_empl_start female_empl_start tot_empl_start male_empl_end female_empl_end tot_empl_end
+
+* Descriptive analysis for credit access
+tab credit_applied_3 sex_ownership, col
+tab credit_applied_1 sex_ownership, col
+bysort sex_ownership: sum credit_applied_amt 
+sum credit_applied_amt 					// credit demand
+tab account sex_ownership if credit_applied_3==1, col nofreq
+tab account_inst sex_ownership if credit_applied_3==1, col nofreq
+
+bysort credit_source: sum credit_applied_amt
+bysort credit_source: sum credit_applied_amt if sex_ownership==1
+bysort credit_source: sum credit_applied_amt if sex_ownership==2
+bysort credit_source: sum credit_applied_amt if sex_ownership==3	// size of credit applied by source
+
+tab received_yes sex_ownership, col
+bysort sex_ownership: sum credit_received_amt 
+sum credit_received_amt
+tab credit_adeq sex_ownership, col
+tab credit_source sex_ownership, col
+tab credit_purpose sex_ownership, col
+tab credit_info_source sex_ownership, col	// credit access
+
+bysort credit_source: sum credit_received_amt
+bysort credit_source: sum credit_received_amt if sex_ownership==2
+bysort credit_source: sum credit_received_amt if sex_ownership==3
+bysort credit_source: sum credit_received_amt if sex_ownership==1 // size of credit received by source
+
+* Descriptive analysis for credit rationing
+tab applied_no sex_ownership, col
+tab applied_no2 sex_ownership, col
+tab credit_denied sex_ownership, col
+tab credit_denied_by sex_ownership, col
+tab reason1_notborrow sex_ownership, col
+tab adequate_no sex_ownership, col
+tab credit_inadeq_reason sex_ownership, col
+
+tab credit_source sex_ownership if credit_denied==1, col nofreq
+tab credit_source sex_ownership, col nofreq
+tab credit_purpose sex_ownership if credit_denied==1, col nofreq
+tab credit_purpose sex_ownership if credit_adeq==0, col nofreq
+tab credit_source sex_ownership if credit_adeq==0, col nofreq
+tab credit_source sex_ownership if credit_inadeq_reason==1, col nofreq
+tab credit_source sex_ownership if credit_inadeq_reason==2, col nofreq
+tab credit_source sex_ownership if credit_inadeq_reason==3, col nofreq
+tab account_inst sex_ownership if credit_applied_3==0, col nofreq
+tab account sex_ownership if credit_applied_3==0, col nofreq
+
+* Descriptive analysis for financing gap
+total credit_applied_amt
+total credit_applied_amt if sex_ownership==1
+total credit_applied_amt if sex_ownership==2
+total credit_applied_amt if sex_ownership==3	// total credit demand, by gender
+
+total credit_received_amt
+total credit_received_amt if sex_ownership==1
+total credit_received_amt if sex_ownership==2
+total credit_received_amt if sex_ownership==3  	// total credit supply, by gender
+
+total fin_gap						// total financing gap for all MSMEs
+total fin_gap if sex_ownership==1
+total fin_gap if sex_ownership==2
+total fin_gap if sex_ownership==3   // financing gap by sex of ownership
+
+total fin_gap if msme_cat_end==1
+total fin_gap if msme_cat_end==2
+total fin_gap if msme_cat_end==3
+total fin_gap if msme_cat_end==4   // financing gap by MSME category
+
+total fin_gap if msme_cat_end==1 & sex_ownership==1
+total fin_gap if msme_cat_end==2 & sex_ownership==1
+total fin_gap if msme_cat_end==3 & sex_ownership==1
+total fin_gap if msme_cat_end==4 & sex_ownership==1  // financing gap for male, by MSME category
+
+total fin_gap if msme_cat_end==1 & sex_ownership==2
+total fin_gap if msme_cat_end==2 & sex_ownership==2
+total fin_gap if msme_cat_end==3 & sex_ownership==2
+total fin_gap if msme_cat_end==4 & sex_ownership==2   // financing gap for females, by MSME category
+
+total fin_gap if msme_cat_end==1 & sex_ownership==3
+total fin_gap if msme_cat_end==2 & sex_ownership==3
+total fin_gap if msme_cat_end==3 & sex_ownership==3
+total fin_gap if msme_cat_end==4 & sex_ownership==3   // financing gap for mixed, by MSME category
+
+total fin_gap if account_inst==1
+total fin_gap if account_inst==2
+total fin_gap if account_inst==3
+total fin_gap if account_inst==4			// financing gap by institution
+
+total fin_gap if account_inst==1 & sex_ownership==1
+total fin_gap if account_inst==2 & sex_ownership==1
+total fin_gap if account_inst==3 & sex_ownership==1
+total fin_gap if account_inst==4 & sex_ownership==1		// financing gap for male, by account institution
+
+total fin_gap if account_inst==1 & sex_ownership==2
+total fin_gap if account_inst==2 & sex_ownership==2
+total fin_gap if account_inst==3 & sex_ownership==2
+total fin_gap if account_inst==4 & sex_ownership==2		// financing gap for female, by account institution
+
+total fin_gap if account_inst==1 & sex_ownership==3
+total fin_gap if account_inst==2 & sex_ownership==3
+total fin_gap if account_inst==3 & sex_ownership==3
+total fin_gap if account_inst==4 & sex_ownership==3		// financing gap for mixed, by account institution
+
+total fin_gap if credit_purpose==1
+total fin_gap if credit_purpose==2
+total fin_gap if credit_purpose==3
+total fin_gap if credit_purpose==4
+total fin_gap if credit_purpose==5
+total fin_gap if credit_purpose==6
+total fin_gap if credit_purpose==7					// financing gap by credit purpose
+
+total fin_gap if credit_purpose==1 & sex_ownership==1
+total fin_gap if credit_purpose==2 & sex_ownership==1
+total fin_gap if credit_purpose==3 & sex_ownership==1
+total fin_gap if credit_purpose==4 & sex_ownership==1
+total fin_gap if credit_purpose==5 & sex_ownership==1
+total fin_gap if credit_purpose==6 & sex_ownership==1
+total fin_gap if credit_purpose==7 & sex_ownership==1		// financing gap for male, by credit purpose
+
+total fin_gap if credit_purpose==1 & sex_ownership==2
+total fin_gap if credit_purpose==2 & sex_ownership==2
+total fin_gap if credit_purpose==3 & sex_ownership==2
+total fin_gap if credit_purpose==4 & sex_ownership==2
+total fin_gap if credit_purpose==5 & sex_ownership==2
+total fin_gap if credit_purpose==6 & sex_ownership==2
+total fin_gap if credit_purpose==7 & sex_ownership==2		// financing gap for female, by credit purpose
+
+total fin_gap if credit_purpose==1 & sex_ownership==3
+total fin_gap if credit_purpose==2 & sex_ownership==3
+total fin_gap if credit_purpose==3 & sex_ownership==3
+total fin_gap if credit_purpose==4 & sex_ownership==3
+total fin_gap if credit_purpose==5 & sex_ownership==3
+total fin_gap if credit_purpose==6 & sex_ownership==3
+total fin_gap if credit_purpose==7 & sex_ownership==3		// financing gap for mixed, by credit purpose
+
+* Testing mean differences by gender of MSME ownership 
+
+global msme_folder "G:\My Drive\2. Personal Projects\1. Research Projects\1. Data Resources"
+
+global business_features own_structure educ msme_reg industry msme_cat_end /*
+*/ tot_empl_end male_empl_end female_empl_end // global var for owner and business characteristics
+
+iebaltab $business_features, grpvar(sex_ownership) vce(cluster county) /*
+*/ savexlsx("$msme_folder/xtics_table1.xlsx") replace ftest rowvarlabel // t-test for business and owner characteristics
+
+global operations_const decision_maker account inst2 /*
+*/ bus_const1 bus_const2 bus_const3 // global var for business operations and constraints
+
+iebaltab $operations_const, grpvar(sex_ownership) vce(cluster county) /*
+*/ savexlsx("$msme_folder/ops_table1.xlsx") replace ftest rowvarlabel // t-test for business operations and constraints
+
+global performance monthly_inc tot_exp msme_perf // global var for business performance 
+
+iebaltab $performance, grpvar(sex_ownership) vce(cluster county) /*
+*/ savexlsx("$msme_folder/perf_table1.xlsx") replace ftest rowvarlabel // t-test for business performance
+
+global credit_demand credit_applied_3 credit_applied_1 credit_applied_amt	// global var for credit demand
+
+iebaltab $credit_demand, grpvar(sex_ownership) vce(cluster county) /*
+*/ savexlsx("$msme_folder/demand_table1.xlsx") replace ftest rowvarlabel // t-test for credit demand
+
+global credit_access received_yes credit_received_amt credit_adeq /*
+*/ credit_source credit_purpose credit_info_source			// global var for credit access
+
+iebaltab $credit_access, grpvar(sex_ownership) vce(cluster county) /*
+*/ savexlsx("$msme_folder/access_table1.xlsx") replace ftest rowvarlabel // t-test for credit access
+
+global credit_rationing applied_no reason1_notborrow reason2_notborrow /*
+*/ reason3_notborrow credit_denied credit_denied_by adequate_no /*
+*/ credit_inadeq_reason			// global var for credit rationing
+
+iebaltab credit_denied credit_denied_by, grpvar(sex_ownership) vce(cluster county) /*
+*/ savexlsx("$msme_folder/ration_table1a.xlsx") replace ftest rowvarlabel // t-test for credit rationing - part A
+
+iebaltab applied_no applied_no2 reason1_notborrow reason2_notborrow /*
+*/ reason3_notborrow adequate_no credit_inadeq_reason, grpvar(sex_ownership) vce(cluster county) /*
+*/ savexlsx("$msme_folder/ration_table1b.xlsx") replace ftest rowvarlabel // t-test for credit rationing - part B
 
 * Credit gender gap
-gen c_applied = .   // applied for credit, general 
-replace c_applied = 1 if credit_applied_3==1 | credit_applied_1==1
-replace c_applied = 0 if credit_applied_3==0 | credit_applied_1==0
 
-gen credit_access = (credit_denied==0) if credit_applied_3==1 | credit_applied_1==1 // applied for and got credit 
-sum credit_access if sex_ownership==1 
-sum credit_access if sex_ownership==2
-sum credit_access if sex_ownership==3
+tab county sex_ownership if credit_applied_1==1
+tab county credit_applied_1 if credit_applied_1==1, col
+tab county sex_ownership if credit_applied_3==1
+tab county sex_ownership if credit_applied_1==1, row  // credit application by county and gender
 
-gen is_male = 1 if sex_ownership==1
-gen is_female = 1 if sex_ownership==2
-gen is_mixed = 1 if sex_ownership==3
+tab county sex_ownership if credit_denied==0
+tab county sex_ownership if credit_denied==0, row		// credit receipt by county and gender
 
-tab2xl county credit_access if sex_ownership==1, col nofreq
-xtable county sex_ownership, c(mean credit_access)
+* Gender gap by size of business
+tab msme_cat_end sex_ownership if credit_applied_1==1	// credit applied by size and gender
+tab msme_cat_end sex_ownership if credit_denied==0		// credit receipt by size and gender
 
-tab county credit_access if is_female==1, col nofreq // credit access by county for females
-tab county credit_access if is_male==1, col nofreq // credit access by county for males 
-tab county credit_access if is_mixed==1, col nofreq // credit access by county for mixed 
-tab county credit_access, col nofreq
-
-
-gen credit_male = credit_access if credit_access==1 & sex_ownership==1   // male owned MSMEs that received credit
-
-gen male_sample = .  // males who applied for credit
-replace male_sample = 1 if sex_ownership==1 & credit_applied_3==1 | credit_applied_1==1   
-replace male_sample = 0 if sex_ownership==2 & credit_applied_3==1 | credit_applied_1==1
-gen credit_male_perc = (credit_male/male_sample)*100     // percent male access 
-
-gen credit_female = credit_access if credit_access==1 & sex_ownership==2 // number of female owned MSMEs that received credit 
-
-gen female_sample = .
-replace female_sample = 1 if sex_ownership==2 & credit_applied_3==1 | credit_applied_1==1
-replace female_sample = 0 if sex_ownership==2 & credit_applied_3==1 | credit_applied_1==1
-
-gen credit_female_perc = (credit_female/female_sample)*100 // percent female access 
-
-gen credit_gender_gap = 100*((credit_male_perc - credit_female_perc) / credit_male_perc)
-
-
-
-
+* Gender gap by financial institutions
+tab credit_source sex_ownership if credit_applied_1==1	// credit applied by source and gender
+tab credit_source sex_ownership if credit_denied==0		// credit receipt by source and gender
